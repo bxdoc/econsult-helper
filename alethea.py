@@ -34,11 +34,7 @@ standard_wait_time = 2
 long_wait_time = 5
 
 def save_excel(excel_data, excel_file):
-    try:
-        excel_data.to_excel(excel_file, index=False)
-    except Exception as e:
-        print("Error: ", e)
-        logging.error("Error: " + e)
+    excel_data.to_excel(excel_file, index=False)
 
 def wait(seconds):
     time.sleep(seconds)
@@ -94,12 +90,7 @@ def main(settings_arr):
     logging.info("Starting script with user: " + username);
     #print(os.getcwd());
     # Read data from Excel file using pandas
-    try:
-        excel_data = pd.read_excel(excel_file, dtype = object, engine='openpyxl')
-    except Exception as e:
-        print("Error reading Excel file:", e)
-        logging.error("Error reading Excel file: " + e)
-        return
+    excel_data = pd.read_excel(excel_file, dtype = object, engine='openpyxl')
 
     # check for any messages due to be sent
     # Iterate through the rows of the Excel file
@@ -112,8 +103,8 @@ def main(settings_arr):
         #print("last message time: " + row['last time'])
         #print(row['econsultid'])
         #print(row['message'])
-            
-        if row['status'] == 'ready':
+        
+        if row['status'] == 'ready' and not pd.isna(row['econsultid']) and not pd.isna(row['last time']) and not pd.isna(row['message']):
             msg = row['name'] + " ready"
             if time.time() > last_time.timestamp()+86400:
                 msg += ", due"
@@ -121,7 +112,7 @@ def main(settings_arr):
                 
             else:
                  msg += ", not due"
-        else:  
+        else:
             msg = row['name'] + " not ready"
         printplus(msg)
         
@@ -141,6 +132,21 @@ def main(settings_arr):
                 
                 WebDriverWait(driver, 10).until(EC.url_to_be("https://aletheamd.com/dashboard/secure-messaging?econsultId="+row['econsultid']))
 
+                # Check last posted message time to prevent chance of duplicate (if previous reply was sent but unable to update excel file)
+                found = 0
+                while found == 0:
+                    try:
+                        last_time_now = driver.find_element(By.XPATH, "//*[@id='root']/div/div/main/div[2]/div/div[2]/div[2]/div/div/div[2]/div/div[2]/div/div[last()]/div[1]/div/div/div/div[last()]/div/div[1]").text;
+                    except:
+                        wait(1)
+                        #WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.XPATH, "//*[@id='root']/div/div/main/div[2]/div/div[2]/div[2]/div/div/div[2]/div/div[2]/div/div[last()]/div[1]/div/div/div/div[3]/div/div[1]")))
+                    else:
+                        found = 1
+                #print(last_time_now)
+                if row['last time'] != last_time_now:
+                    printplus("Error: last time '" + last_time_now + "'does not match, message aborted")
+                    return 0
+                    
                 # Type out message
                 WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "textarea[placeholder='Type a message']")))
                 form_type_data(By.CSS_SELECTOR, "textarea[placeholder='Type a message']", row['message']) 
@@ -150,7 +156,7 @@ def main(settings_arr):
                 excel_data.at[index, 'status'] = 'sent';
                 save_excel(excel_data, excel_file);
                 driver.quit()
-                exit(0)
+                return 0
     printplus("All lines parsed, no actionable items found. Exiting.")
     
 
@@ -166,6 +172,9 @@ def get_settings():
     return arr
 
 # Run the main function
-settings = get_settings()
-main(settings)
-
+try:
+    settings = get_settings()
+    main(settings)
+except Exception as e:
+    logging.error(e)
+exit(0)
